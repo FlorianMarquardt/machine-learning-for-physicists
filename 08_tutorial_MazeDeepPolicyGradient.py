@@ -102,7 +102,20 @@ def maze(width=81, height=51, complexity=.75, density=.75):
 # (I haven't gotten it to be successful in this version, although it runs...)
 # 
 
-# In[292]:
+# In[5]:
+
+
+# an empty playground... (even that turns out to be difficult enough currently)
+def empty_maze(width,height):
+    mymaze=np.zeros([width,height],dtype='int')
+    mymaze[:,0]=1
+    mymaze[:,-1]=1
+    mymaze[0,:]=1
+    mymaze[-1,:]=1
+    return(mymaze)
+
+
+# In[6]:
 
 
 # full policy gradient RL for picking up 'treasure chests'
@@ -141,7 +154,7 @@ Policy.compile(loss='categorical_crossentropy',
               optimizer=optimizers.SGD(learning_rate=eta))
 
 
-# In[293]:
+# In[8]:
 
 
 # NOW: the actual training loop
@@ -153,7 +166,7 @@ directions=np.array([[0,1],[0,-1],[1,0],[-1,0]])
 nsteps=5
 
 # total number of trials, i.e. trajectories
-ntrials=1000
+ntrials=100
 skipsteps=5 # don't plot every trial
 
 # storing all the state/action pairs of the current trajectory
@@ -281,16 +294,10 @@ for trial in range(ntrials):
         plt.show()
 
 
-# In[40]:
-
-
-get_ipython().magic('timeit Policy.predict_on_batch(input_images)[0]')
-
-
 # ## The deep policy gradient algorithm: 'fast' version (trains in parallel on many mazes, which  accelerates the policy network evaluation, since this can be done on a whole batch of input images)
 # 
 
-# In[422]:
+# In[3]:
 
 
 # an empty playground... (even that turns out to be difficult enough currently)
@@ -303,11 +310,12 @@ def empty_maze(width,height):
     return(mymaze)
 
 
-# In[371]:
+# In[4]:
 
 
 def run_one_trial(Policy,M,nsteps,input_image,input_images,reward,jx,jy,
                   actions,position,world,allsamples,batchsize,
+                  directions,
                  delete_treasure=True):
     """
     Run one trial starting at position jx,jy, storing returns in R, storing
@@ -379,7 +387,7 @@ def run_one_trial(Policy,M,nsteps,input_image,input_images,reward,jx,jy,
     return(R)
 
 
-# In[403]:
+# In[5]:
 
 
 def prepare_batch(batchsize,world,M,num_chests,jx,jy,full_maze=False):
@@ -422,7 +430,7 @@ def prepare_batch(batchsize,world,M,num_chests,jx,jy,full_maze=False):
     return(reward,input_image)
 
 
-# In[417]:
+# In[9]:
 
 
 def try_pos(x,y,Policy,M,world,reward):
@@ -433,7 +441,8 @@ def try_pos(x,y,Policy,M,world,reward):
     
     return( Policy.predict_on_batch(try_image)[0]  )
 
-def plot_try_pos(M,num_actions,Policy,world,reward,ax=None,target=None):
+def plot_try_pos(M,num_actions,Policy,world,reward,
+                 directions,ax=None,target=None):
     
     P=np.zeros([M,M,num_actions])
     for x in range(M):
@@ -459,7 +468,7 @@ def plot_try_pos(M,num_actions,Policy,world,reward,ax=None,target=None):
         plt.show()
 
 
-# In[423]:
+# In[10]:
 
 
 def run_RL(M=7,eta=0.0001,num_chests=1,delete_treasure=False,
@@ -603,6 +612,7 @@ def run_RL(M=7,eta=0.0001,num_chests=1,delete_treasure=False,
                  reward=reward, jx=jx, jy=jy,
                  actions=actions,position=position,world=world,
                 allsamples=allsamples,batchsize=batchsize,
+                        directions=directions,
                 delete_treasure=delete_treasure)
 
         # store the return
@@ -639,7 +649,7 @@ def run_RL(M=7,eta=0.0001,num_chests=1,delete_treasure=False,
                      reward=current_test_reward, jx=test_jx, jy=test_jy,
                      actions=test_actions,position=test_position,
                     world=test_world,allsamples=test_allsamples,
-                    batchsize=test_batchsize,
+                    batchsize=test_batchsize,directions=directions,
                     delete_treasure=delete_treasure)
 
             clear_output(wait=True)
@@ -664,7 +674,7 @@ def run_RL(M=7,eta=0.0001,num_chests=1,delete_treasure=False,
 
             if not do_show_test_batch:
                 plot_try_pos(M,num_actions,Policy,orig_test_world,orig_test_reward,
-                             ax=test_plot,target=[chest_x,chest_y])
+                             directions,ax=test_plot,target=[chest_x,chest_y])
             else:
                 # show what's happened in this test trial
                 for n in range(test_batchsize):
@@ -859,6 +869,18 @@ run_RL(M=5,eta=0.0001,num_chests=1,delete_treasure=False,
 
 
 # In[427]:
+
+
+# the same again, with the same position of the chest:
+run_RL(M=5,eta=0.0001,num_chests=1,delete_treasure=False,
+          single_maze=True,batchsize=10,test_batchsize=5,
+          nsteps=7,ntrials=1000,skipsteps=5,do_visualize=True,
+          num_actions=5,do_show_test_batch=False,
+          try_adam=True,choose_random_positions_for_single_maze=False,
+      place_chest=[2,2], kernel_size=3)
+
+
+# In[11]:
 
 
 # the same again, with the same position of the chest:
