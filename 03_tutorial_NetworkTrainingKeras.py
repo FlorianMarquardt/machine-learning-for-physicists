@@ -56,9 +56,6 @@ from time import sleep
 def apply_net(y_in): # one forward pass through the network
     global Net    
     return(Net.predict_on_batch(y_in))
-
-def apply_net_simple(y_in): # one forward pass through the network
-    return(apply_net(y_in))
         
 def train_net(y_in,y_target): # one full training batch
     # y_in is an array of size batchsize x (input-layer-size)
@@ -68,17 +65,9 @@ def train_net(y_in,y_target): # one full training batch
     cost=Net.train_on_batch(y_in,y_target)[0]
     return(cost)
 
-def init_layer_variables(weights,biases,activations,use_keras_init=False,eta=0.1,optimizer='sgd'):
-    global Weights, Biases, NumLayers, Activations
-    global LayerSizes, y_layer, df_layer, dw_layer, db_layer
+def init_layer_variables(nInputs, weights,biases,activations,use_keras_init=False,eta=0.1,optimizer='sgd'):
     global Net
     
-    # store the main data in global variables
-    Weights=weights
-    Biases=biases
-    Activations=activations
-    NumLayers=len(Weights)
-
     # keras activation names can be slightly different from what I used...
     # also: 'jump' is not implemented here
     KerasActivation={ "sigmoid":"sigmoid", "reLU":"relu", "linear":"linear" }
@@ -86,24 +75,25 @@ def init_layer_variables(weights,biases,activations,use_keras_init=False,eta=0.1
     Net=Sequential() # a new network ('sequential' is the simplest structure: layer by layer)
     
     # now build up the network, layer by layer:
-    LayerSizes=[2]
-    for j in range(NumLayers):
-        LayerSizes.append(len(Biases[j]))
+    for j in range(len(biases)): # = range(len(weights)):
         if use_keras_init: # use keras' random weight initialization approach
-            Net.add(Dense(len(Biases[j]), # number of neurons
-                          input_shape=(LayerSizes[j],), # size of previous layer
+            Net.add(Dense(len(biases[j]), # number of neurons
+                          input_shape=(nInputs,), # size of previous layer
                           activation=KerasActivation[activations[j]] # activation function
                      ))            
         else:
-            Net.add(Dense(len(Biases[j]), # number of neurons
-                          input_shape=(LayerSizes[j],), # size of previous layer
+            Net.add(Dense(len(biases[j]), # number of neurons
+                          input_shape=(nInputs,), # size of previous layer
                           activation=KerasActivation[activations[j]], # activation function
                          weights = [ np.array(weights[j]), np.array(biases[j]) ] # the weights and biases for this layer
                      ))
+        nInputs = len(biases[j])
+
+    the_optimizer=optimizers.SGD(lr=eta) # standard gradient descent with given learning rate!
     if optimizer=='adam':
+        the_optimizer='adam'
+    if optimizer=='adam_advanced':
         the_optimizer=optimizers.Adam(lr=eta) # adaptive
-    else:
-        the_optimizer=optimizers.SGD(lr=eta) # standard gradient descent with given learning rate!
     Net.compile(loss='mean_squared_error',
               optimizer=the_optimizer,
               metrics=['accuracy'])
@@ -140,17 +130,18 @@ def plot_neuron(ax,X,Y,B,size=100.0,vmax=1.0):
         col=np.array([[1,0.3,0]])
     ax.scatter([X],[Y],marker='o',c=col,s=size,zorder=10)
     
-def visualize_network(weights,biases,activations,
-                      M=100,y0range=[-1,1],y1range=[-1,1],
+def visualize_network(nInputs, weights,biases,activations,
+                      M=100, y_range=None,
                      size=400.0, linewidth=5.0,
                      weights_are_swapped=False,
                     layers_already_initialized=False,
                       plot_cost_function=None,
-                      current_cost=None, cost_max=None, plot_target=None
+                      current_cost=None, cost_max=None, target_function=None
                      ):
     """
-    Visualize a neural network with 2 input 
-    neurons and 1 output neuron (plot output vs input in a 2D plot)
+    Visualize a neural network with 1 output neuron 
+    and 2 input neurons (if 2 == nInputs)
+    (plot output vs input in a 2D plot)
     
     weights is a list of the weight matrices for the
     layers, where weights[j] is the matrix for the connections
@@ -169,8 +160,9 @@ def visualize_network(weights,biases,activations,
     
     M is the resolution (MxM grid)
     
-    y0range is the range of y0 neuron values (horizontal axis)
-    y1range is the range of y1 neuron values (vertical axis)
+    if nInputs ==2:
+    y_range[0] is the range of y0 neuron values (horizontal axis)
+    y_range[1] is the range of y1 neuron values (vertical axis)
     """
     if not weights_are_swapped:
         swapped_weights=[]
@@ -179,19 +171,13 @@ def visualize_network(weights,biases,activations,
     else:
         swapped_weights=weights
 
-    y0,y1=np.meshgrid(np.linspace(y0range[0],y0range[1],M),np.linspace(y1range[0],y1range[1],M))
-    y_in=np.zeros([M*M,2])
-    y_in[:,0]=y0.flatten()
-    y_in[:,1]=y1.flatten()
-    
     # if we call visualization directly, we still
     # need to initialize the 'Weights' and other
     # global variables; otherwise (during training)
     # all of this has already been taken care of:
     if not layers_already_initialized:
-        init_layer_variables(swapped_weights,biases,activations)
-    y_out=apply_net_simple(y_in)
-
+        init_layer_variables(nInputs, swapped_weights,biases,activations)
+    
     if plot_cost_function is None:
         fig,ax=plt.subplots(ncols=2,nrows=1,figsize=(8,4))
     else:
@@ -208,13 +194,16 @@ def visualize_network(weights,biases,activations,
     # plot the network itself:
     
     # positions of neurons on plot:
-    posX=[[-0.5,+0.5]]; posY=[[0,0]]
+    posX=[]; posY=[]
     vmax=0.0 # for finding the maximum weight
     vmaxB=0.0 # for maximum bias
-    for j in range(len(biases)):
-        n_neurons=len(biases[j])
+    n_neurons = nInputs
+    for j in range(len(biases)+1):
         posX.append(np.array(range(n_neurons))-0.5*(n_neurons-1))
-        posY.append(np.full(n_neurons,j+1))
+        posY.append(np.full(n_neurons,j))
+        if (len(biases)<=j):
+            break
+        n_neurons=len(biases[j])
         vmax=np.maximum(vmax,np.max(np.abs(weights[j])))
         vmaxB=np.maximum(vmaxB,np.max(np.abs(biases[j])))
 
@@ -239,18 +228,54 @@ def visualize_network(weights,biases,activations,
     ax[0].axis('off')
     
     # now: the output of the network
+    plot_target_values=True
+    if 1 == nInputs:
+        plot_1D(fig, ax, target_function, plot_target_values, M, y_range)
+    if 2 == nInputs:
+        plot_2D(fig, ax, target_function, plot_target_values, M, y_range[0], y_range[1])
+
+    if plot_cost_function is not None:
+        ax[2].plot(plot_cost_function)
+        ax[2].set_ylim([0.0,cost_max])
+        ax[2].set_yticks([0.0,cost_max])
+        ax[2].set_yticklabels(["0",'{:1.2e}'.format(cost_max)])
+        if current_cost is not None:
+            ax[2].text(0.9, 0.9, 'cost={:1.2e}'.format(current_cost), horizontalalignment='right',
+                       verticalalignment='top', transform=ax[2].transAxes)
+    
+    # plt.show()
+    
+def plot_1D(fig, ax, target_function, plot_target_values, N=400, y_range=[-20,20]):
+    N=400 # number of points
+    y_in=np.zeros([N,1]) # prepare correct shape for network, here N becomes the batch size
+    y_in[:,0]=np.linspace(y_range[0],y_range[1],N) # fill with interval
+   
+    y_out=apply_net(y_in)
+
+    ax[1].plot(y_in,y_out,label="NN")
+    ax[1].plot(y_in,target_function(y_in),
+            color="orange",label="true")
+    ax[1].legend()
+
+    # definition = ["_l " if "linear"==val else "_s " if "sigmoid"==val else str(val) for sublist in definition for val in sublist]
+    # print("".join(definition))
+    # fig.suptitle("grafiek "+str(k))
+    # fig.suptitle("".join(definition))
+    return
+    
+def plot_2D(fig, ax, target_function, plot_target_values, M, y0range, y1range):
+
+    y0,y1=np.meshgrid(np.linspace(y0range[0],y0range[1],M),np.linspace(y1range[0],y1range[1],M))
+    y_in=np.zeros([M*M,2])
+    y_in[:,0]=y0.flatten()
+    y_in[:,1]=y1.flatten()
+
+    y_out=apply_net(y_in)
+
     img=ax[1].imshow(np.reshape(y_out,[M,M]),origin='lower',
                     extent=[y0range[0],y0range[1],y1range[0],y1range[1]])
     ax[1].set_xlabel(r'$y_0$')
     ax[1].set_ylabel(r'$y_1$')
-    
-#     axins1 = inset_axes(ax[1],
-#                     width="40%",  # width = 50% of parent_bbox width
-#                     height="5%",  # height : 5%
-#                     loc='upper right',
-#                        bbox_to_anchor=[0.3,0.4])
-
-#    axins1 = ax[1].inset_axes([0.5,0.8,0.45,0.1])
     axins1 = plt.axes([0, 0, 1, 1])
     ip = InsetPosition(ax[1], [0.25, 0.1, 0.5, 0.05])
     axins1.set_axes_locator(ip)
@@ -262,39 +287,31 @@ def visualize_network(weights,biases,activations,
     plt.setp(cbxtick_obj, color="white")
     axins1.xaxis.set_ticks_position("bottom")
 
-    if plot_target is not None:
+    if plot_target_values:
+        target_values=np.reshape(target_function(y_in),[M,M])
         axins2 = plt.axes([0.01, 0.01, 0.99, 0.99])
         ip = InsetPosition(ax[1], [0.75, 0.75, 0.2, 0.2])
         axins2.set_axes_locator(ip)
-        axins2.imshow(plot_target,origin='lower')
+        axins2.imshow(target_values,origin='lower')
         axins2.get_xaxis().set_ticks([])
         axins2.get_yaxis().set_ticks([])
         
-    if plot_cost_function is not None:
-        ax[2].plot(plot_cost_function)
-        ax[2].set_ylim([0.0,cost_max])
-        ax[2].set_yticks([0.0,cost_max])
-        ax[2].set_yticklabels(["0",'{:1.2e}'.format(cost_max)])
-        if current_cost is not None:
-            ax[2].text(0.9, 0.9, 'cost={:1.2e}'.format(current_cost), horizontalalignment='right',
-                       verticalalignment='top', transform=ax[2].transAxes)
+    return
     
-    plt.show()
-    
-def visualize_network_training(weights,biases,activations,
+def visualize_network_training(nInputs, weights,biases,activations,
                                target_function,
                                num_neurons=None,
                                weight_scale=1.0,
                                bias_scale=1.0,
                                yspread=1.0,
-                      M=100,y0range=[-1,1],y1range=[-1,1],
+                      M=100,y_range=None,
                      size=400.0, linewidth=5.0,
-                    steps=100, batchsize=10, eta=0.1,
+                    steps=100, batchsize=10,
                               random_init=False,
                               visualize_nsteps=1,
                               plot_target=True,
                               use_keras_init=False,
-                              optimizer='sgd'):
+                              optimizer='sgd', eta=0.1):
     """
     Visualize the training of a neural network.
     
@@ -344,104 +361,139 @@ def visualize_network_training(weights,biases,activations,
     used to determine the spread of Gaussian random
     variables used for initialization!
     """
-    global Net, Weights, Biases
     
     if num_neurons is not None: # build weight matrices as randomly initialized
-        weights=[weight_scale*np.random.randn(num_neurons[j+1],num_neurons[j]) for j in range(len(num_neurons)-1)]
         biases=[bias_scale*np.random.randn(num_neurons[j+1]) for j in range(len(num_neurons)-1)]
+        if use_keras_init:
+            # we need a list of the same length
+            weights=[0  for j in range(len(biases))] 
+        else:
+            weights=[weight_scale*np.random.randn(num_neurons[j+1],num_neurons[j]) for j in range(len(num_neurons)-1)]
     
     swapped_weights=[]
     for j in range(len(weights)):
         swapped_weights.append(np.transpose(weights[j]))
-    init_layer_variables(swapped_weights,biases,activations,use_keras_init=use_keras_init,eta=eta,optimizer=optimizer)
-    
-    if plot_target:
-        y0,y1=np.meshgrid(np.linspace(y0range[0],y0range[1],M),np.linspace(y1range[0],y1range[1],M))
-        y=np.zeros([M*M,2])
-        y[:,0]=y0.flatten()
-        y[:,1]=y1.flatten()
-        plot_target_values=np.reshape(target_function(y),[M,M])
-    else:
-        plot_target_values=None
+    init_layer_variables(nInputs, swapped_weights,biases,activations,use_keras_init=use_keras_init,eta=eta,optimizer=optimizer)
     
     y_target=np.zeros([batchsize,1])
     costs=np.zeros(steps)
-    
+
     for j in range(steps):
         # produce samples (random points in y0,y1-space):
-        y_in=yspread*np.random.randn(batchsize,2)
+        if 1 == nInputs:
+            y_in =  yspread*np.random.uniform(low=y_range[0],high=y_range[1],size=[batchsize])
+        if 2 == nInputs:
+            # get randomly scattered points (Gaussian, variance 1)
+            y_in=yspread*np.random.randn(batchsize,2)
         # apply target function to those points:
         y_target[:,0]=target_function(y_in)
         # do one training step on this batch of samples:
         costs[j]=train_net(y_in,y_target)
         
         # now visualize the updated network:
-        if j%visualize_nsteps==0:
+        if j%visualize_nsteps==0 or j==steps-1:
             clear_output(wait=True) # for animation
-            if j>10:
-                cost_max=np.average(costs[0:j])*1.5
+            if j<=visualize_nsteps:
+                cost_max=np.max(costs[0:j+1])
             else:
-                cost_max=costs[0]
+                cost_max=np.max(costs[j-visualize_nsteps:j+1])
 
             # extract weights and biases from the keras network:
-            for j in range(NumLayers):
-                Weights[j],Biases[j]=Net.layers[j].get_weights()
+            for j in range(len(biases)):
+                weights[j],biases[j]=Net.layers[j].get_weights()
             
-            visualize_network(Weights,Biases,activations,
-                          M,y0range=y0range,y1range=y1range,
+            visualize_network(nInputs, weights,biases,activations,
+                          M, y_range=y_range,
                          size=size, linewidth=linewidth,
                              weights_are_swapped=True,
                              layers_already_initialized=True,
                              plot_cost_function=costs,
                              current_cost=costs[j],
                              cost_max=cost_max,
-                             plot_target=plot_target_values)
+                             target_function=target_function)
             sleep(0.1) # wait a bit before next step (probably not needed)
+            plt.show() # indentation: wait after each plot
+        # plt.show() # show all plots of 1 network, then wait
+    # plt.show() # minimal indentation: show all plots at the end
 
+def lorentzian(x):
+    return 1/(1+x**2)
+
+def wave_packet(y):
+    return( - np.sin(y)/(1+y**2) ) # a wave packet...
+# layers = [[20,"linear"], [20,"sigmoid"],[20,"linear"], [20,"sigmoid"],[20,"linear"], [20,"sigmoid"],[1,"linear"]]
+layers = [[20,"linear"], [20,"linear"], [20,"sigmoid"],[20,"linear"], [20,"linear"], [20,"sigmoid"],[1,"linear"]]
+# layers = [[20,"linear"], [20,"sigmoid"],[1,"linear"]]
+
+activations = [row[1] for row in layers]
+num_neurons = [1]
+num_neurons.extend([row[0] for row in layers])
+
+visualize_network_training(nInputs=1, weights=[],biases=[],num_neurons=num_neurons,
+    target_function=lorentzian, # the target function to approximate
+    activations=activations,
+    yspread = 10,
+    y_range=[-20,20],
+    steps=1000, batchsize=20,
+    use_keras_init=True,
+    optimizer='adam', # eta=None,
+    visualize_nsteps=400, 
+    plot_target=True,
+    M = 400,
+    size=20,linewidth=2)
+
+visualize_network_training(nInputs=1, weights=[],biases=[],num_neurons=num_neurons,
+    target_function=wave_packet, # the target function to approximate
+    activations=activations,
+    yspread = 10,
+    y_range=[-20,20],
+    steps=1000, batchsize=20,
+    use_keras_init=True,
+    optimizer='adam', # eta=None,
+    visualize_nsteps=400, 
+    plot_target=True,
+    M = 400,
+    size=20,linewidth=2)
 
 # ## Example 1: Training for a simple AND function
 
-# In[4]:
-
-
-def my_target(y):
+def my_target_AND(y):
     return( 1.0*( (y[:,0]+y[:,1])>0) )
 
-visualize_network_training(weights=[ [ 
+visualize_network_training(nInputs=2, weights=[ [ 
     [0.2,-0.9]  # weights of 2 input neurons for single output neuron
     ] ],
     biases=[ 
         [0.0] # bias for single output neuron
             ],
-    target_function=my_target, # the target function to approximate
+    target_function=my_target_AND, # the target function to approximate
     activations=[ 'sigmoid' # activation for output
                 ],
-    y0range=[-3,3],y1range=[-3,3],
-    steps=1000, eta=.5, batchsize=200,
-                          visualize_nsteps=10, 
+    y_range=[[-3,3],[-3,3]],
+    steps=1000, batchsize=200,
+                          visualize_nsteps=250, 
                            plot_target=True,
-                          optimizer='adam')
-
+                          optimizer='adam_advanced', eta=.5)
 
 # ## Example 2: Training for half a smiley (circle with two eyes)
 
 # In[67]:
 
 
-def my_target(y):
+def smiley(y):
     a=0.8; r=0.5; R=2.0
     return( 1.0*( y[:,0]**2+y[:,1]**2<R**2 ) - 1.0*( (y[:,0]-a)**2+(y[:,1]-a)**2<r**2) - 1.0*( (y[:,0]+a)**2+(y[:,1]-a)**2<r**2 ) )
 
 
-visualize_network_training(weights=[],biases=[],num_neurons=[2,30,30,1],
-    target_function=my_target, # the target function to approximate
+visualize_network_training(nInputs=2, weights=[],biases=[],num_neurons=[2,30,30,1],
+    target_function=smiley, # the target function to approximate
     activations=[ 'reLU','reLU','linear' ],
-    y0range=[-3,3],y1range=[-3,3],
-    steps=5000, eta=.1, batchsize=200,
-                          visualize_nsteps=100, 
-                           plot_target=True,
-                          optimizer='adam',
-                          size=20,linewidth=2)
+    y_range=[[-3,3],[-3,3]],
+    steps=5000, batchsize=200,
+    visualize_nsteps=1000, 
+    plot_target=True,
+    optimizer='adam_advanced', eta=.1,
+    size=20,linewidth=2)
 
 
 # ## Exercise: Extend this code so as to be able to use more advanced keras activation functions for the layers!
